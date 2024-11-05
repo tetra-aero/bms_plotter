@@ -62,10 +62,13 @@ markupsafe==3.0.2
     # via jinja2
 mdurl==0.1.2
     # via markdown-it-py
+msgpack==1.0.8
+    # via python-can
 oauthlib==3.2.2
     # via flet-runtime
 packaging==23.2
     # via flet
+    # via python-can
 pydantic==2.9.2
     # via fastapi
 pydantic-core==2.23.4
@@ -74,6 +77,8 @@ pygments==2.18.0
     # via rich
 pypng==0.20220715.0
     # via qrcode
+python-can==4.4.2
+    # via bms-plotter
 python-dateutil==2.9.0.post0
     # via arrow
 python-dotenv==1.0.1
@@ -91,6 +96,8 @@ requests==2.32.3
     # via cookiecutter
 rich==13.9.3
     # via cookiecutter
+ruff==0.7.2
+    # via bms-plotter
 six==1.16.0
     # via python-dateutil
     # via repath
@@ -107,6 +114,7 @@ typing-extensions==4.12.2
     # via fastapi
     # via pydantic
     # via pydantic-core
+    # via python-can
     # via qrcode
 urllib3==2.2.3
     # via requests
@@ -120,3 +128,5 @@ watchfiles==0.24.0
     # via uvicorn
 websockets==13.1
     # via uvicorn
+wrapt==1.16.0
+    # via python-can
