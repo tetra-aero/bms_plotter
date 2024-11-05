@@ -7,9 +7,6 @@ authors = [
 ]
 dependencies = [
     "flet>=0.24.1",
-    "plotly>=5.24.1",
-    "pandas>=2.2.3",
-    "kaleido>=0.2.1",
 ]
 readme = "README.md"
 requires-python = ">= 3.8"

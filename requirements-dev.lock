@@ -56,25 +56,16 @@ idna==3.10
     # via requests
 jinja2==3.1.4
     # via cookiecutter
-kaleido==0.2.1
-    # via bms-plotter
 markdown-it-py==3.0.0
     # via rich
 markupsafe==3.0.2
     # via jinja2
 mdurl==0.1.2
     # via markdown-it-py
-numpy==2.1.2
-    # via pandas
 oauthlib==3.2.2
     # via flet-runtime
 packaging==23.2
     # via flet
-    # via plotly
-pandas==2.2.3
-    # via bms-plotter
-plotly==5.24.1
-    # via bms-plotter
 pydantic==2.9.2
     # via fastapi
 pydantic-core==2.23.4
@@ -85,13 +76,10 @@ pypng==0.20220715.0
     # via qrcode
 python-dateutil==2.9.0.post0
     # via arrow
-    # via pandas
 python-dotenv==1.0.1
     # via uvicorn
 python-slugify==8.0.4
     # via cookiecutter
-pytz==2024.2
-    # via pandas
 pyyaml==6.0.2
     # via cookiecutter
     # via uvicorn
@@ -111,8 +99,6 @@ sniffio==1.3.1
     # via httpx
 starlette==0.41.2
     # via fastapi
-tenacity==9.0.0
-    # via plotly
 text-unidecode==1.3
     # via python-slugify
 types-python-dateutil==2.9.0.20241003
@@ -122,8 +108,6 @@ typing-extensions==4.12.2
     # via pydantic
     # via pydantic-core
     # via qrcode
-tzdata==2024.2
-    # via pandas
 urllib3==2.2.3
     # via requests
 uvicorn==0.32.0
