@@ -2,20 +2,22 @@ import struct
 import threading
 import time
 from collections import defaultdict
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import can
 
 
 class CANReceiver:
     def __init__(
-        self, channel: str = "can0", bitrate: int = 500000, max_data_points: int = 50
+        self, channel: str = "can0", bitrate: int = 500000, max_data_points: int = 5000
     ):
         self.parser: CANParser = CANParser(0x01)
         self.channel: str = channel
         self.bitrate: int = bitrate
         self.max_data_points: int = max_data_points
-        self.data_points: Dict[str, List[Union[int, float]]] = defaultdict(list)
+        self.data_points: Dict[str, List[Tuple[float, Union[int, float]]]] = (
+            defaultdict(list)
+        )
         self.data_lock: threading.Lock = threading.Lock()
         self.running_lock: threading.Lock = threading.Lock()
         self._is_running: bool = False
@@ -44,19 +46,18 @@ class CANReceiver:
 
             message: Optional[can.Message] = bus.recv(1.0)
             if message:
+                timestamp = time.time()
                 with self.data_lock:
                     data = self.parser.parse_message(message=message)
                     if data:
                         for key, value in data.items():
-                            self.data_points[key].append(value)
+                            self.data_points[key].append((timestamp, value))
                             if len(self.data_points[key]) > self.max_data_points:
                                 self.data_points[key].pop(0)
-            # time.sleep(0.1)
 
-    def get_data_points(self) -> Dict[str, List[Union[int, float]]]:
+    def get_data_points(self) -> Dict[str, List[Tuple[float, Union[int, float]]]]:
         with self.data_lock:
-            # print(self.data_points)
-            return self.data_points.copy()
+            return {key: points[:] for key, points in self.data_points.items()}
 
 
 class CANParser:
@@ -69,9 +70,14 @@ class CANParser:
     KEY_BATTERY_CURRENT = "battery_current"
     KEY_MIN_CELL_VOLTAGE = "min_cell_voltage"
     KEY_MAX_CELL_VOLTAGE = "max_cell_voltage"
+    KEY_BATTERY_AVERAGE_TEMP = "battery_average_temp"
+    KEY_BATTERY_MAX_TEMP = "battery_max_temp"
+    KEY_PCB_AVERAGE_TEMP = "pcb_average_temp"
+    KEY_PCB_MAX_TEMP = "pcb_max_temp"
     KEY_REMAIN = "remain"
     KEY_SOC = "soc"
     KEY_DUTY = "duty"
+    KEY_CELL = "cell_id_"
 
     def __init__(self, board_id: int):
         self.board_id = board_id
@@ -87,7 +93,7 @@ class CANParser:
         elif message_id == self.TEMP_ID + self.board_id:
             return self._parse_temp(message.data)
         elif message_id == self.EACH_CELL_VOLTAGE_ID + self.board_id:
-            return self._parse_cell_voltage(message_id)
+            return self._parse_each_cell_voltage(message.data)
         return None
 
     def _parse_battery_voltage_current(
@@ -97,8 +103,8 @@ class CANParser:
         battery_voltage, battery_current = struct.unpack("<I i", data[:8])
 
         return {
-            "battery_voltage": battery_voltage * 100e-6,
-            "battery_current": battery_current * 1e-3,
+            self.KEY_BATTERY_VOLTAGE: battery_voltage * 100e-6,
+            self.KEY_BATTERY_CURRENT: battery_current * 1e-3,
         }
 
     def _parse_cell_voltage(self, data: bytes) -> Dict[str, Union[int, float]]:
@@ -106,23 +112,23 @@ class CANParser:
         min_cell_voltage, max_cell_voltage = struct.unpack("<I I", data[:8])
 
         return {
-            "min_cell_voltage": min_cell_voltage * 100e-6,
-            "max_cell_voltage": max_cell_voltage * 100e-6,
+            self.KEY_MIN_CELL_VOLTAGE: min_cell_voltage * 100e-6,
+            self.KEY_MAX_CELL_VOLTAGE: max_cell_voltage * 100e-6,
         }
 
     def _parse_soc_duty(self, data: bytes) -> Dict[str, Union[int, float]]:
         _, remain, soc, _, duty, _ = struct.unpack("<H H B B B B", data[:8])
-        return {"remain": remain, "soc": soc, "duty": duty}
+        return {self.KEY_REMAIN: remain, self.KEY_SOC: soc, self.KEY_DUTY: duty}
 
     def _parse_temp(self, data: bytes) -> Dict[str, Union[int, float]]:
         battery_average, battery_max, pcb_average, pcb_max = struct.unpack(
             "<h h h h", data[:8]
         )
         return {
-            "battery_average_temp": battery_average,
-            "battery_max_temp": battery_max,
-            "pcb_average_temp": pcb_average,
-            "pcb_max_temp": pcb_max,
+            self.KEY_BATTERY_AVERAGE_TEMP: battery_average,
+            self.KEY_BATTERY_MAX_TEMP: battery_max,
+            self.KEY_PCB_AVERAGE_TEMP: pcb_average,
+            self.KEY_PCB_MAX_TEMP: pcb_max,
         }
 
     def _parse_cell_message(self, data: int) -> Dict[str, Union[int, float]]:
@@ -132,9 +138,9 @@ class CANParser:
 
     def _parse_each_cell_voltage(self, data: bytes) -> Dict[str, Union[int, float]]:
         cell1, cell2, cell3, cell4 = struct.unpack("<H H H H", data[:8])
-        return {
-            self._parse_cell_message(cell1),
-            self._parse_cell_message(cell2),
-            self._parse_cell_message(cell3),
-            self._parse_cell_message(cell4),
-        }
+        result = {}
+        result.update(self._parse_cell_message(cell1))
+        result.update(self._parse_cell_message(cell2))
+        result.update(self._parse_cell_message(cell3))
+        result.update(self._parse_cell_message(cell4))
+        return result
