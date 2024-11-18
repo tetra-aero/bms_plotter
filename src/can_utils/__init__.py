@@ -9,9 +9,14 @@ import can
 
 class CANReceiver:
     def __init__(
-        self, channel: str = "can0", bitrate: int = 500000, max_data_points: int = 5000
+        self,
+        channel: str = "can0",
+        bitrate: int = 500000,
+        max_data_points: int = 5000,
+        bms_id: int = 0x01,
     ):
-        self.parser: CANParser = CANParser(0x01)
+        self.parser: CANParser = CANParser(bms_id)
+        self.bms_id = bms_id
         self.channel: str = channel
         self.bitrate: int = bitrate
         self.max_data_points: int = max_data_points
@@ -36,7 +41,7 @@ class CANReceiver:
             self._is_running = False
 
     def receive_data(self) -> None:
-        bus = can.interface.Bus(
+        self.bus = can.interface.Bus(
             bustype="socketcan", channel=self.channel, bitrate=self.bitrate
         )
         while True:
@@ -44,7 +49,7 @@ class CANReceiver:
                 if not self._is_running:
                     break
 
-            message: Optional[can.Message] = bus.recv(1.0)
+            message: Optional[can.Message] = self.bus.recv(1.0)
             if message:
                 timestamp = time.time()
                 with self.data_lock:
@@ -58,6 +63,16 @@ class CANReceiver:
     def get_data_points(self) -> Dict[str, List[Tuple[float, Union[int, float]]]]:
         with self.data_lock:
             return {key: points[:] for key, points in self.data_points.items()}
+
+    def notice_full_recharge(self):
+        try:
+            if self.bus:
+                message = can.Message(
+                    arbitration_id=0x4600 + self.bms_id, data=[], is_extended_id=True
+                )
+                self.bus.send(message)
+        except can.CanError as e:
+            print("Can Send Error")
 
 
 class CANParser:

@@ -1,5 +1,6 @@
 import threading
 import time
+import csv
 from typing import Dict, List
 
 import flet as ft
@@ -101,11 +102,17 @@ def main_page() -> ft.Control:
 def main(page: ft.Page):
     page.title = "Tetra Battery Management System Plotter App"
     page.theme_mode = ft.ThemeMode.DARK
-    # page.scroll = ft.ScrollMode.AUTO
-    # page.window.frameless = True
-    # page.window.full_screen = True
-    # page.add(main_page())
-    # page.update()
+    page_num = 0
+    start_time = time.time()
+    can_receiver = cu.CANReceiver()
+    can_receiver.start_receiving()
+
+    def callback_full_recharge(e: any):
+        can_receiver.notice_full_recharge()
+
+    def handle_page(e):
+        page_num = e.control.selected_index
+        print(page_num)
 
     rail = ft.NavigationRail(
         selected_index=0,
@@ -113,17 +120,17 @@ def main(page: ft.Page):
         extended=True,
         min_width=100,
         min_extended_width=200,
-        # leading=ft.FloatingActionButton(icon=ft.icons.CREATE, text="Add"),
         group_alignment=-0.9,
+        on_change=handle_page,
         destinations=[
             ft.NavigationRailDestination(
-                icon=ft.icons.FAVORITE_BORDER,
-                selected_icon=ft.icons.FAVORITE,
+                icon=ft.icons.AUTO_GRAPH,
+                selected_icon=ft.Icon(ft.icons.AUTO_GRAPH),
                 label="General",
             ),
             ft.NavigationRailDestination(
-                icon_content=ft.Icon(ft.icons.BOOKMARK_BORDER),
-                selected_icon_content=ft.Icon(ft.icons.BOOKMARK),
+                icon=ft.icons.SPACE_DASHBOARD_OUTLINED,
+                selected_icon=ft.Icon(ft.icons.SPACE_DASHBOARD),
                 label="Detail",
             ),
             ft.NavigationRailDestination(
@@ -132,13 +139,10 @@ def main(page: ft.Page):
                 label_content=ft.Text("Setting"),
             ),
         ],
-        on_change=lambda e: print("Selected destination:", e.control.selected_index),
     )
+
     main = main_page()
-    # main.page.auto_scroll = ft.ScrollMode.AUTO
-    # main.page.expand = True
     main.expand = True
-    # main.
 
     page.add(
         ft.Row(
@@ -147,19 +151,34 @@ def main(page: ft.Page):
                 ft.VerticalDivider(width=10),
                 ft.GridView(
                     [main],
-                    # alignment=ft.MainAxisAlignment.START,
                     expand=True,
-                    # auto_scroll=True,
                 ),
             ],
             expand=True,
-        )
+        ),
+        ft.Row(
+            [
+                ft.OutlinedButton(
+                    "Notify FULL",
+                    icon="battery_charging_full",
+                    icon_color="yellow400",
+                    on_click=callback_full_recharge,
+                ),
+                ft.OutlinedButton(
+                    "Start Listening",
+                    icon=ft.icons.NOT_STARTED,
+                    icon_color="green400",
+                    on_click=callback_full_recharge,
+                ),
+                ft.OutlinedButton(
+                    "Stop Listening",
+                    icon=ft.icons.STOP_CIRCLE_ROUNDED,
+                    icon_color="red400",
+                    on_click=callback_full_recharge,
+                ),
+            ]
+        ),
     )
-
-    start_time = time.time()
-
-    can_receiver = cu.CANReceiver()
-    can_receiver.start_receiving()
 
     def update_chart():
         current_time = time.time() - start_time
@@ -184,9 +203,20 @@ def main(page: ft.Page):
                     item.update_content(key, line_charts[key])
         page.update()
 
+    def update_csv():
+        data_points = can_receiver.get_data_points()
+
+        with open("data_points.csv", mode="a", newline="") as csv_file:
+            csv_writer = csv.writer(csv_file)
+            for key, data in data_points.items():
+                if data:
+                    timestamp, value = data[-1]
+                    csv_writer.writerow([key, timestamp, value])
+
     def update_task():
         while True:
             update_chart()
+            update_csv()
             time.sleep(0.5)
 
     update_thread = threading.Thread(target=update_task, daemon=True)
