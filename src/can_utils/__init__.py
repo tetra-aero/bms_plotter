@@ -66,7 +66,7 @@ class CANReceiver:
 
     def notice_full_recharge(self):
         try:
-            if self.bus:
+            if self._is_running:
                 message = can.Message(
                     arbitration_id=0x4600 + self.bms_id, data=[], is_extended_id=True
                 )

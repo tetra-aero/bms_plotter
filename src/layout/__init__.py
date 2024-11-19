@@ -30,7 +30,7 @@ class Sheet(ft.Card):
         if self.filter:
             if self.filter in name:
                 self.content.controls.append(new_content)
-                self.update()
+                # self.update()
 
     def build(self):
         return self.card
