@@ -26,7 +26,7 @@ class CANReceiver:
         self.data_points: Dict[str, List[Tuple[float, Union[int, float]]]] = (
             defaultdict(list)
         )
-        self.data_lock: asyncio.Lock = asyncio.Lock()
+        self.data_lock: threading.Lock = threading.Lock()
         self._is_running: bool = False
         self.message_queue = queue.Queue()
         self._bus_lock: threading.Lock = threading.Lock()
@@ -77,7 +77,7 @@ class CANReceiver:
         while True:
             timestamp, key, value = await self._get_message_from_queue()
             if timestamp is not None:
-                async with self.data_lock:
+                with self.data_lock:
                     self.data_points[key].append((timestamp, value))
                     if len(self.data_points[key]) > self.max_data_points:
                         self.data_points[key].pop(0)
@@ -89,7 +89,7 @@ class CANReceiver:
             return None, None, None
 
     async def get_data_points(self) -> Dict[str, List[Tuple[float, Union[int, float]]]]:
-        async with self.data_lock:
+        with self.data_lock:
             return {key: points[:] for key, points in self.data_points.items()}
 
     async def notice_full_recharge(self):

@@ -19,7 +19,7 @@ class BatteryManagementApp:
 
         self.bus_name = "can0"
         self.bus_baudrate = 500000
-        self.device_id = 0x09
+        self.device_id = 0x01
         self.last_written_timestamp = None
 
         self.start_time = datetime.datetime.now().timestamp()
@@ -179,7 +179,7 @@ class BatteryManagementApp:
             runs_count=1,
             max_extent=300,
             child_aspect_ratio=1.0,
-            spacing=5,
+            spacing=1,
             run_spacing=5,
             controls=[],
         )
@@ -300,7 +300,7 @@ class BatteryManagementApp:
 
     def callback_full_recharge(self, e: ft.ControlEvent):
         if self.can_receiver:
-            self.can_receiver.notice_full_recharge()
+            asyncio.run(self.can_receiver.notice_full_recharge())
 
     def start_listen(self, e: ft.ControlEvent):
         self.start_time = datetime.datetime.now().timestamp()
@@ -417,22 +417,24 @@ class BatteryManagementApp:
                                 ),
                                 ft.Text(
                                     str(value),
-                                    size=48,
+                                    size=60,
                                     color="white",
                                     weight="bold",
                                     text_align=ft.TextAlign.CENTER,
                                 ),
                             ],
-                            spacing=10,
+                            spacing=1,
                             alignment=ft.MainAxisAlignment.CENTER,
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
-                        padding=10,
+                        padding=1,
                         bgcolor=ft.colors.BLACK,
                         border_radius=12,
                         alignment=ft.alignment.center,
                     ),
-                    # elevation=4,
+                    height=100,  # カード全体の高さを制限
+                    width=200,
+                    elevation=4,
                 )
             )
 
