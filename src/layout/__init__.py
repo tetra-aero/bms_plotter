@@ -11,7 +11,7 @@ class Sheet(ft.Card):
 
     def build_card(self) -> ft.Card:
         return ft.Card(
-            ft.Container(
+            content=ft.Container(
                 content=ft.Column(
                     [
                         ft.ListTile(
@@ -23,7 +23,7 @@ class Sheet(ft.Card):
                 ),
                 alignment=ft.alignment.center,
                 border_radius=ft.border_radius.all(5),
-            )
+            ),
         )
 
     def update_content(self, name: str, new_content: ft.Control):

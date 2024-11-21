@@ -23,6 +23,14 @@ class BatteryManagementApp:
         self.last_written_timestamp = None
 
         self.start_time = datetime.datetime.now().timestamp()
+        self.latest_data = {}
+        self.log_directory = "logs"
+        if not os.path.exists(self.log_directory):
+            os.makedirs(self.log_directory)
+        start_time_str = datetime.datetime.fromtimestamp(self.start_time).strftime(
+            "%Y-%m-%d-%H-%M-%S"
+        )
+        self.file_name = os.path.join(self.log_directory, f"{start_time_str}.csv")
         self.init_ui()
 
     def init_ui(self):
@@ -166,7 +174,23 @@ class BatteryManagementApp:
         )
 
     def create_general_page(self) -> ft.Control:
-        return ft.Column(spacing=5, controls=[])
+        self.data_table = ft.DataTable(
+            columns=[
+                ft.DataColumn(label=ft.Text("Series", color="white")),
+                ft.DataColumn(label=ft.Text("Latest Data")),
+            ],
+            rows=[],
+            bgcolor="black",
+        )
+
+        return ft.Column(
+            spacing=5,
+            controls=[
+                self.data_table,
+            ],
+            expand=True,
+            scroll=True,
+        )
 
     def handle_chart_visibility(self, e: ft.ControlEvent, key: str):
         if key in self.line_charts:
@@ -246,8 +270,21 @@ class BatteryManagementApp:
                     4, ft.colors.with_opacity(0.5, ft.colors.ON_SURFACE)
                 )
             ),
-            left_axis=ft.ChartAxis(labels_size=40),
-            bottom_axis=ft.ChartAxis(labels_size=40),
+            left_axis=ft.ChartAxis(
+                labels_size=40,
+            ),
+            bottom_axis=ft.ChartAxis(
+                labels_size=40,
+                title=ft.Text(
+                    title,
+                    size=15,
+                    weight=ft.FontWeight.BOLD,
+                    color=ft.colors.YELLOW,
+                    expand=True,
+                    text_align=ft.TextAlign.JUSTIFY,
+                ),
+                title_size=30,
+            ),
             tooltip_bgcolor=ft.colors.with_opacity(0.8, ft.colors.RED_ACCENT),
         )
         return chart
@@ -278,6 +315,7 @@ class BatteryManagementApp:
             asyncio.run(self.can_receiver.process_messages())
 
     def stop_listen(self, e: ft.ControlEvent):
+        self.clear_data(e)
         if self.can_receiver:
             self.can_receiver.stop_receiving()
             self.can_receiver = None
@@ -301,8 +339,8 @@ class BatteryManagementApp:
                 self.line_charts[key].data_series[0].data_points.append(
                     ft.LineChartDataPoint(x=current_time, y=data[-1][1])
                 )
-                self.line_charts[key].min_x = 0
-                self.line_charts[key].max_x = current_time
+                self.line_charts[key].min_x = -1
+                self.line_charts[key].max_x = max(current_time + 1, 10)
                 values = [point[1] for point in data]
                 self.line_charts[key].min_y = min(values) - 1
                 self.line_charts[key].max_y = max(values) * 1.1
@@ -318,43 +356,66 @@ class BatteryManagementApp:
         if not self.can_receiver:
             return
 
-        current_date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
-        file_name = f"{current_date}.csv"
-
         data_points = await self.can_receiver.get_data_points()
         if not data_points:
             return
-        all_timestamps = sorted(
-            {
-                int(timestamp)
-                for key_data in data_points.values()
-                for timestamp, _ in key_data
+
+        new_data = {}
+        for key, key_data in data_points.items():
+            new_data[key] = [
+                (timestamp, value)
+                for timestamp, value in key_data
                 if self.last_written_timestamp is None
                 or timestamp > self.last_written_timestamp
-            }
-        )
+            ]
 
-        if not all_timestamps:
+        if not any(new_data.values()):
             return
-        file_exists = os.path.exists(file_name)
+
+        for key, key_data in new_data.items():
+            if key_data:
+                latest_data_point = key_data[-1][1]
+                self.latest_data[key] = latest_data_point
+
+        self.update_data_table()
+
+        file_exists = os.path.exists(self.file_name)
         if not file_exists:
             headers = ["timestamp"] + list(data_points.keys())
-            with open(file_name, mode="w", newline="") as csv_file:
+            with open(self.file_name, mode="w", newline="") as csv_file:
                 csv_writer = csv.writer(csv_file)
                 csv_writer.writerow(headers)
 
-        with open(file_name, mode="a", newline="") as csv_file:
+        with open(self.file_name, mode="a", newline="") as csv_file:
             csv_writer = csv.writer(csv_file)
-            for timestamp in all_timestamps:
+            all_new_timestamps = sorted(
+                set(t for key_data in new_data.values() for t, _ in key_data)
+            )
+
+            for timestamp in all_new_timestamps:
                 row = [timestamp]
                 for key in data_points.keys():
-                    value = next((v for t, v in data_points[key] if t == timestamp), "")
+                    value = next((v for t, v in new_data[key] if t == timestamp), "")
                     row.append(value)
                 csv_writer.writerow(row)
-        self.last_written_timestamp = max(all_timestamps)
+        self.last_written_timestamp = max(all_new_timestamps)
+
+    def update_data_table(self):
+        rows = []
+        for key, value in self.latest_data.items():
+            rows.append(
+                ft.DataRow(
+                    cells=[ft.DataCell(ft.Text(key)), ft.DataCell(ft.Text(str(value)))]
+                )
+            )
+
+        self.data_table.rows = rows
+        self.page.update()
 
     def save_next_csv(self, e: ft.ControlEvent):
-        print(e)
+        self.clear_data(e)
+        self.start_time = datetime.datetime.now().timestamp()
+        self.last_written_timestamp = None
 
     def clear_data(self, e: ft.ControlEvent):
         for chart in self.line_charts.values():
