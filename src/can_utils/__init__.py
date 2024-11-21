@@ -1,3 +1,5 @@
+import asyncio
+import queue
 import struct
 import threading
 import time
@@ -23,56 +25,84 @@ class CANReceiver:
         self.data_points: Dict[str, List[Tuple[float, Union[int, float]]]] = (
             defaultdict(list)
         )
-        self.data_lock: threading.Lock = threading.Lock()
-        self.running_lock: threading.Lock = threading.Lock()
+        self.data_lock: asyncio.Lock = asyncio.Lock()
         self._is_running: bool = False
+        self.message_queue = queue.Queue()
+        self._bus_lock: threading.Lock = threading.Lock()
+        self._bus: Optional[can.interface.Bus] = None
+
+    def _get_bus(self) -> can.interface.Bus:
+        """Get or initialize the shared bus instance."""
+        if self._bus is None:
+            with self._bus_lock:
+                self._bus = can.interface.Bus(
+                    bustype="socketcan", channel=self.channel, bitrate=self.bitrate
+                )
+        return self._bus
 
     def start_receiving(self) -> None:
-        with self.running_lock:
-            if not self._is_running:
-                self._is_running = True
-                self.receive_thread = threading.Thread(
-                    target=self.receive_data, daemon=True
-                )
-                self.receive_thread.start()
+        if not self._is_running:
+            self._is_running = True
+            self.receiver_thread = threading.Thread(target=self._receive_data)
+            self.receiver_thread.start()
 
     def stop_receiving(self) -> None:
-        with self.running_lock:
+        if self._is_running:
             self._is_running = False
+            self.receiver_thread.join()
+            self._close_bus()
 
-    def receive_data(self) -> None:
-        self.bus = can.interface.Bus(
-            bustype="socketcan", channel=self.channel, bitrate=self.bitrate
-        )
-        while True:
-            with self.running_lock:
-                if not self._is_running:
-                    break
+    def _close_bus(self) -> None:
+        if self._bus:
+            with self._bus_lock:
+                self._bus.shutdown()
+                self._bus = None
 
-            message: Optional[can.Message] = self.bus.recv(1.0)
-            if message:
-                timestamp = time.time()
-                with self.data_lock:
-                    data = self.parser.parse_message(message=message)
+    def _receive_data(self) -> None:
+        while self._is_running:
+            try:
+                bus = self._get_bus()
+                message: Optional[can.Message] = bus.recv(1.0)  # 1-second timeout
+                if message:
+                    timestamp = int(time.time())
+                    data = self.parser.parse_message(message)
                     if data:
                         for key, value in data.items():
-                            self.data_points[key].append((timestamp, value))
-                            if len(self.data_points[key]) > self.max_data_points:
-                                self.data_points[key].pop(0)
+                            self.message_queue.put((timestamp, key, value))
+            except can.CanError as e:
+                print(f"CAN receive error: {e}")
 
-    def get_data_points(self) -> Dict[str, List[Tuple[float, Union[int, float]]]]:
-        with self.data_lock:
+    async def process_messages(self) -> None:
+        while True:
+            timestamp, key, value = await self._get_message_from_queue()
+            if timestamp is not None:
+                async with self.data_lock:
+                    self.data_points[key].append((timestamp, value))
+                    if len(self.data_points[key]) > self.max_data_points:
+                        self.data_points[key].pop(0)
+
+    async def _get_message_from_queue(self):
+        if not self.message_queue.empty():
+            return self.message_queue.get(1)
+        else:
+            return None, None, None
+
+    async def get_data_points(self) -> Dict[str, List[Tuple[float, Union[int, float]]]]:
+        async with self.data_lock:
             return {key: points[:] for key, points in self.data_points.items()}
 
-    def notice_full_recharge(self):
-        try:
-            if self._is_running:
+    async def notice_full_recharge(self):
+        if self._is_running:
+            try:
+                bus = self._get_bus()
                 message = can.Message(
-                    arbitration_id=0x4600 + self.bms_id, data=[], is_extended_id=True
+                    arbitration_id=0x4600 + self.bms_id,
+                    data=[],
+                    is_extended_id=True,
                 )
-                self.bus.send(message)
-        except can.CanError as e:
-            print("Can Send Error")
+                await asyncio.to_thread(bus.send, message)
+            except can.CanError as e:
+                print(f"CAN send error: {e}")
 
 
 class CANParser:
@@ -114,18 +144,14 @@ class CANParser:
     def _parse_battery_voltage_current(
         self, data: bytes
     ) -> Dict[str, Union[int, float]]:
-        # [battery_voltage (uint32_t), battery_current (int32_t)]
         battery_voltage, battery_current = struct.unpack("<I i", data[:8])
-
         return {
             self.KEY_BATTERY_VOLTAGE: battery_voltage * 100e-6,
             self.KEY_BATTERY_CURRENT: battery_current * 1e-3,
         }
 
     def _parse_cell_voltage(self, data: bytes) -> Dict[str, Union[int, float]]:
-        # [min_cell_voltage (uint32_t), max_cell_voltage (uint32_t)]
         min_cell_voltage, max_cell_voltage = struct.unpack("<I I", data[:8])
-
         return {
             self.KEY_MIN_CELL_VOLTAGE: min_cell_voltage * 100e-6,
             self.KEY_MAX_CELL_VOLTAGE: max_cell_voltage * 100e-6,
