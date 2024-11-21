@@ -1,4 +1,5 @@
 import asyncio
+import math
 import queue
 import struct
 import threading
@@ -146,15 +147,15 @@ class CANParser:
     ) -> Dict[str, Union[int, float]]:
         battery_voltage, battery_current = struct.unpack("<I i", data[:8])
         return {
-            self.KEY_BATTERY_VOLTAGE: battery_voltage * 100e-6,
-            self.KEY_BATTERY_CURRENT: battery_current * 1e-3,
+            self.KEY_BATTERY_VOLTAGE: round(battery_voltage * 100e-6, 2),
+            self.KEY_BATTERY_CURRENT: round(battery_current * 1e-3, 2),
         }
 
     def _parse_cell_voltage(self, data: bytes) -> Dict[str, Union[int, float]]:
         min_cell_voltage, max_cell_voltage = struct.unpack("<I I", data[:8])
         return {
-            self.KEY_MIN_CELL_VOLTAGE: min_cell_voltage * 100e-6,
-            self.KEY_MAX_CELL_VOLTAGE: max_cell_voltage * 100e-6,
+            self.KEY_MIN_CELL_VOLTAGE: round(min_cell_voltage * 100e-6, 2),
+            self.KEY_MAX_CELL_VOLTAGE: round(max_cell_voltage * 100e-6, 2),
         }
 
     def _parse_soc_duty(self, data: bytes) -> Dict[str, Union[int, float]]:
@@ -166,16 +167,16 @@ class CANParser:
             "<h h h h", data[:8]
         )
         return {
-            self.KEY_BATTERY_AVERAGE_TEMP: battery_average,
-            self.KEY_BATTERY_MAX_TEMP: battery_max,
-            self.KEY_PCB_AVERAGE_TEMP: pcb_average,
-            self.KEY_PCB_MAX_TEMP: pcb_max,
+            self.KEY_BATTERY_AVERAGE_TEMP: round(battery_average, 2),
+            self.KEY_BATTERY_MAX_TEMP: round(battery_max, 2),
+            self.KEY_PCB_AVERAGE_TEMP: round(pcb_average, 2),
+            self.KEY_PCB_MAX_TEMP: round(pcb_max, 2),
         }
 
     def _parse_cell_message(self, data: int) -> Dict[str, Union[int, float]]:
         cell_id = (data & 0xFE00) >> 9
         cell_voltage = data & 0x1FF
-        return {f"cell_id_{cell_id}": cell_voltage * 10e-3}
+        return {f"cell_id_{cell_id}": round(cell_voltage * 10e-3, 2)}
 
     def _parse_each_cell_voltage(self, data: bytes) -> Dict[str, Union[int, float]]:
         cell1, cell2, cell3, cell4 = struct.unpack("<H H H H", data[:8])

@@ -19,7 +19,7 @@ class BatteryManagementApp:
 
         self.bus_name = "can0"
         self.bus_baudrate = 500000
-        self.device_id = 0x01
+        self.device_id = 0x09
         self.last_written_timestamp = None
 
         self.start_time = datetime.datetime.now().timestamp()
@@ -174,20 +174,19 @@ class BatteryManagementApp:
         )
 
     def create_general_page(self) -> ft.Control:
-        self.data_table = ft.DataTable(
-            columns=[
-                ft.DataColumn(label=ft.Text("Series", color="white")),
-                ft.DataColumn(label=ft.Text("Latest Data")),
-            ],
-            rows=[],
-            bgcolor="black",
+        self.data_grid_view = ft.GridView(
+            auto_scroll=True,
+            runs_count=1,
+            max_extent=300,
+            child_aspect_ratio=1.0,
+            spacing=5,
+            run_spacing=5,
+            controls=[],
         )
 
         return ft.Column(
             spacing=5,
-            controls=[
-                self.data_table,
-            ],
+            controls=[self.data_grid_view],
             expand=True,
             scroll=True,
         )
@@ -401,16 +400,43 @@ class BatteryManagementApp:
         self.last_written_timestamp = max(all_new_timestamps)
 
     def update_data_table(self):
-        rows = []
+        grid_controls = []
+
         for key, value in self.latest_data.items():
-            rows.append(
-                ft.DataRow(
-                    cells=[ft.DataCell(ft.Text(key)), ft.DataCell(ft.Text(str(value)))]
+            grid_controls.append(
+                ft.Card(
+                    content=ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Text(
+                                    key,
+                                    size=24,
+                                    color="yellow",
+                                    weight="bold",
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                                ft.Text(
+                                    str(value),
+                                    size=48,
+                                    color="white",
+                                    weight="bold",
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                            ],
+                            spacing=10,
+                            alignment=ft.MainAxisAlignment.CENTER,
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        padding=10,
+                        bgcolor=ft.colors.BLACK,
+                        border_radius=12,
+                        alignment=ft.alignment.center,
+                    ),
+                    # elevation=4,
                 )
             )
 
-        self.data_table.rows = rows
-        self.page.update()
+        self.data_grid_view.controls = grid_controls
 
     def save_next_csv(self, e: ft.ControlEvent):
         self.clear_data(e)
