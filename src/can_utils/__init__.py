@@ -15,7 +15,7 @@ class CANReceiver:
         self,
         channel: str = "can0",
         bitrate: int = 500000,
-        max_data_points: int = 5000,
+        max_data_points: int = 1000,
         bms_id: int = 0x01,
     ):
         self.parser: CANParser = CANParser(bms_id)
@@ -53,6 +53,10 @@ class CANReceiver:
             self.receiver_thread.join()
             self._close_bus()
 
+    def reset_data_points(self) -> None:
+        with self.data_lock:
+            self.data_points.clear()
+
     def _close_bus(self) -> None:
         if self._bus:
             with self._bus_lock:
@@ -73,8 +77,8 @@ class CANReceiver:
             except can.CanError as e:
                 print(f"CAN receive error: {e}")
 
-    async def process_messages(self) -> None:
-        while True:
+    async def process_messages(self, stop_event) -> None:
+        while not stop_event.is_set():
             timestamp, key, value = await self._get_message_from_queue()
             if timestamp is not None:
                 with self.data_lock:

@@ -19,6 +19,9 @@ class BatteryManagementApp:
         self.items_mainpage: List[layout.Sheet] = []
         self.can_receiver: Optional[cu.CANReceiver] = None
 
+        self.sampling_rate = 2.0
+        self.last_chart_update_time = 0.0
+
         self.bus_name = "can0"
         self.bus_baudrate = 500000
         self.device_id = 0x01
@@ -227,6 +230,7 @@ class BatteryManagementApp:
             if isinstance(control, ft.Card):
                 control.content = checkbox_grid
                 break
+        print(self.line_charts)
         self.page.update()
 
     def create_setting_page(self) -> ft.Control:
@@ -252,6 +256,13 @@ class BatteryManagementApp:
                     value=str(self.device_id),
                     on_change=lambda e: setattr(
                         self, "device_id", int(e.control.value)
+                    ),
+                ),
+                ft.TextField(
+                    label="Sampling Rate (seconds)",
+                    value=str(self.sampling_rate),
+                    on_change=lambda e: setattr(
+                        self, "sampling_rate", float(e.control.value)
                     ),
                 ),
                 ft.Card(
@@ -304,7 +315,7 @@ class BatteryManagementApp:
             ),
             tooltip_bgcolor=ft.colors.with_opacity(0.8, ft.colors.RED_ACCENT),
         )
-        self.update_visibility_checkboxes()
+
         return chart
 
     def handle_navigation(self, e: ft.ControlEvent):
@@ -330,7 +341,7 @@ class BatteryManagementApp:
                 bms_id=self.device_id,
             )
             self.can_receiver.start_receiving()
-            asyncio.run(self.can_receiver.process_messages())
+            asyncio.run(self.can_receiver.process_messages(self.stop_event))
 
     def stop_listen(self, e: ft.ControlEvent):
         self.clear_data(e)
@@ -343,6 +354,12 @@ class BatteryManagementApp:
             return
 
         current_time = datetime.datetime.now().timestamp() - self.start_time
+
+        if current_time - self.last_chart_update_time < self.sampling_rate:
+            return
+
+        self.last_chart_update_time = current_time
+
         data_points = await self.can_receiver.get_data_points()
 
         if not data_points:
@@ -364,7 +381,7 @@ class BatteryManagementApp:
                 self.line_charts[key].max_y = max(values) * 1.1
             else:
                 self.line_charts[key] = self.create_chart(key)
-
+                self.update_visibility_checkboxes()
                 for item in self.items_mainpage:
                     item.update_content(key, self.line_charts[key])
 
@@ -469,6 +486,8 @@ class BatteryManagementApp:
         self.last_written_timestamp = None
 
     def clear_data(self, e: ft.ControlEvent):
+        # self.can_receiver.reset_data_points()
+        self.last_chart_update_time = 0
         for chart in self.line_charts.values():
             if chart.data_series:
                 chart.data_series.clear()
