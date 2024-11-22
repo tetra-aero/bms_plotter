@@ -112,6 +112,7 @@ class CANParser:
     SOC_DUTY_ID = 0x4200
     TEMP_ID = 0x4300
     EACH_CELL_VOLTAGE_ID = 0x4400
+    EACH_TEMPERATURE_ID = 0x4500
     KEY_BATTERY_VOLTAGE = "battery_voltage"
     KEY_BATTERY_CURRENT = "battery_current"
     KEY_MIN_CELL_VOLTAGE = "min_cell_voltage"
@@ -124,6 +125,7 @@ class CANParser:
     KEY_SOC = "soc"
     KEY_DUTY = "duty"
     KEY_CELL = "cell_id_"
+    KEY_TEMP = "thrm_id_"
 
     def __init__(self, board_id: int):
         self.board_id = board_id
@@ -140,6 +142,8 @@ class CANParser:
             return self._parse_temp(message.data)
         elif message_id == self.EACH_CELL_VOLTAGE_ID + self.board_id:
             return self._parse_each_cell_voltage(message.data)
+        elif message_id == self.EACH_TEMPERATURE_ID + self.board_id:
+            return self._parse_each_temperature(message.data)
         return None
 
     def _parse_battery_voltage_current(
@@ -185,4 +189,23 @@ class CANParser:
         result.update(self._parse_cell_message(cell2))
         result.update(self._parse_cell_message(cell3))
         result.update(self._parse_cell_message(cell4))
+        return result
+
+    def _parse_thrm_message(self, data: int) -> Dict[str, Union[int, float]]:
+        thrm_id = (data & 0xFC00) >> 10
+        compressed_temp = data & 0x03FF
+        sign_bit = (compressed_temp & 0x0200) >> 9
+        abs_temperature = compressed_temp & 0x01FF
+        temperature = -abs_temperature if sign_bit == 1 else abs_temperature
+        return {f"thrm_id_{thrm_id}": round(temperature, 2)}
+
+    def _parse_each_temperature(self, data: bytes) -> Dict[str, Union[int, float]]:
+        result = {}
+        if len(data) % 2 != 0:
+            return result
+
+        for i in range(0, len(data), 2):
+            (thrm,) = struct.unpack("<H", data[i : i + 2])
+            result.update(self._parse_thrm_message(thrm))
+
         return result

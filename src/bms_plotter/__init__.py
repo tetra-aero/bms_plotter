@@ -13,6 +13,8 @@ import layout
 class BatteryManagementApp:
     def __init__(self, page: ft.Page):
         self.page = page
+        self.page.window.prevent_close = True
+        self.page.window.on_event = self.close
         self.line_charts: Dict[str, ft.LineChart] = {}
         self.items_mainpage: List[layout.Sheet] = []
         self.can_receiver: Optional[cu.CANReceiver] = None
@@ -21,6 +23,7 @@ class BatteryManagementApp:
         self.bus_baudrate = 500000
         self.device_id = 0x01
         self.last_written_timestamp = None
+        self.stop_event = asyncio.Event()
 
         self.start_time = datetime.datetime.now().timestamp()
         self.latest_data = {}
@@ -33,14 +36,22 @@ class BatteryManagementApp:
         self.file_name = os.path.join(self.log_directory, f"{start_time_str}.csv")
         self.init_ui()
 
+    def close(self, e):
+        if e.data == "close":
+            print("Close")
+            if self.can_receiver:
+                self.can_receiver.stop_receiving()
+            self.stop_event.set()
+            self.page.window.destroy()
+
     def init_ui(self):
         self.page.title = "Tetra Battery Management System Plotter App"
         self.page.theme_mode = ft.ThemeMode.DARK
 
         self.main_container = ft.Container()
+        self.content_setting = self.create_setting_page()
         self.content_detail = self.create_detail_page()
         self.content_general = self.create_general_page()
-        self.content_setting = self.create_setting_page()
 
         self.main_container.content = self.content_general
 
@@ -130,9 +141,10 @@ class BatteryManagementApp:
         )
 
     async def update_task(self):
-        while True:
-            await self.update_chart()
-            await self.update_csv()
+        while not self.stop_event.is_set():
+            u1 = self.update_chart()
+            u2 = self.update_csv()
+            await asyncio.gather(u1, u2)
             await asyncio.sleep(1.0)
 
     def create_detail_page(self) -> ft.Control:
@@ -166,6 +178,9 @@ class BatteryManagementApp:
         self.items_mainpage.append(
             layout.Sheet("Cell Voltage", cu.CANParser.KEY_CELL, self.create_graphs([]))
         )
+        self.items_mainpage.append(
+            layout.Sheet("Temperature", cu.CANParser.KEY_TEMP, self.create_graphs([]))
+        )
         return ft.Column(
             spacing=5,
             controls=self.items_mainpage,
@@ -174,13 +189,11 @@ class BatteryManagementApp:
         )
 
     def create_general_page(self) -> ft.Control:
-        self.data_grid_view = ft.GridView(
+        self.data_grid_view = ft.Row(
             auto_scroll=True,
-            runs_count=1,
-            max_extent=300,
-            child_aspect_ratio=1.0,
-            spacing=1,
-            run_spacing=5,
+            run_spacing=2,
+            spacing=2,
+            wrap=True,
             controls=[],
         )
 
@@ -194,7 +207,27 @@ class BatteryManagementApp:
     def handle_chart_visibility(self, e: ft.ControlEvent, key: str):
         if key in self.line_charts:
             self.line_charts[key].visible = e.control.value
-            # self.page.update()
+
+    def update_visibility_checkboxes(self):
+        checkboxes = [
+            ft.Checkbox(
+                label=key,
+                value=self.line_charts[key].visible
+                if key in self.line_charts
+                else True,
+                on_change=lambda e, k=key: self.handle_chart_visibility(e, k),
+                width=200,
+                height=30,
+            )
+            for key in sorted(self.line_charts.keys())
+        ]
+
+        checkbox_grid = ft.Row(controls=checkboxes, wrap=True)
+        for control in self.content_setting.controls:
+            if isinstance(control, ft.Card):
+                control.content = checkbox_grid
+                break
+        self.page.update()
 
     def create_setting_page(self) -> ft.Control:
         return ft.Column(
@@ -221,26 +254,11 @@ class BatteryManagementApp:
                         self, "device_id", int(e.control.value)
                     ),
                 ),
-                ft.ExpansionTile(
-                    title=ft.Text("Temp Series"),
-                    initially_expanded=True,
-                    collapsed_text_color=ft.colors.BLUE,
-                    text_color=ft.colors.BLUE,
-                    controls=[
-                        ft.Column(
-                            [
-                                ft.Checkbox(
-                                    label=key,
-                                    value=self.line_charts[key].visible
-                                    if key in self.line_charts
-                                    else True,
-                                    on_change=lambda e,
-                                    k=key: self.handle_chart_visibility(e, k),
-                                )
-                                for key in sorted(self.line_charts.keys())
-                            ]
-                        )
-                    ],
+                ft.Card(
+                    # title=ft.Text("Series Visible/InVisible"),
+                    # initially_expanded=True,
+                    # collapsed_text_color=ft.colors.BLUE,
+                    # text_color=ft.colors.BLUE,
                 ),
             ],
         )
@@ -286,6 +304,7 @@ class BatteryManagementApp:
             ),
             tooltip_bgcolor=ft.colors.with_opacity(0.8, ft.colors.RED_ACCENT),
         )
+        self.update_visibility_checkboxes()
         return chart
 
     def handle_navigation(self, e: ft.ControlEvent):
@@ -417,7 +436,7 @@ class BatteryManagementApp:
                                 ),
                                 ft.Text(
                                     str(value),
-                                    size=60,
+                                    size=36,
                                     color="white",
                                     weight="bold",
                                     text_align=ft.TextAlign.CENTER,
@@ -432,8 +451,8 @@ class BatteryManagementApp:
                         border_radius=12,
                         alignment=ft.alignment.center,
                     ),
-                    height=100,  # カード全体の高さを制限
-                    width=200,
+                    height=125,
+                    width=150,
                     elevation=4,
                 )
             )
@@ -443,6 +462,10 @@ class BatteryManagementApp:
     def save_next_csv(self, e: ft.ControlEvent):
         self.clear_data(e)
         self.start_time = datetime.datetime.now().timestamp()
+        start_time_str = datetime.datetime.fromtimestamp(self.start_time).strftime(
+            "%Y-%m-%d-%H-%M-%S"
+        )
+        self.file_name = os.path.join(self.log_directory, f"{start_time_str}.csv")
         self.last_written_timestamp = None
 
     def clear_data(self, e: ft.ControlEvent):
@@ -459,3 +482,4 @@ def main(page: ft.Page):
 
 
 ft.app(main)
+# ft.app_async(main)
